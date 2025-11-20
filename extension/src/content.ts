@@ -36,7 +36,7 @@ const observer = new MutationObserver((mutations) => {
     let cleanTitle = rawTitle.replace(/^\d+\.\s*/, '').trim();
 
     // If document.title was used, it might look like "Two Sum - LeetCode", so remove suffix
-    cleanTitle = cleanTitle.replace(' - LeetCode', '').trim();
+    cleanTitle = cleanTitle.replace(' - LeetCode', '').replace(' - NeetCode', '').trim();
 
     console.log(`LeetCode Notion Sync: Detected Problem - ${cleanTitle}`);
 
