@@ -36,13 +36,7 @@ make install
 
 ### 3. Environment Variables
 
-Create a `.env` file in the root directory:
-
-```env
-NOTION_KEY=your_secret_integration_token
-NOTION_DATABASE_ID=your_database_id
-PORT=3099
-```
+Create a `.env` file in the root directory. See `.env.example` for an example.
 
 ### 4. Build the Extension
 

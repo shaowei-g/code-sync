@@ -4,7 +4,7 @@
   "version": "1.0",
   "description": "Syncs Accepted LeetCode submissions to Notion",
   "permissions": ["activeTab", "scripting"],
-  "host_permissions": ["https://leetcode.com/*", "https://neetcode.io/*", "http://localhost:{{PORT}}/*"],
+  "host_permissions": ["https://leetcode.com/*", "https://neetcode.io/*", "{{SERVER_URL}}/*"],
   "content_scripts": [
     {
       "matches": ["https://leetcode.com/problems/*", "https://neetcode.io/*"],

@@ -1,3 +1,5 @@
+import { settings } from './setting';
+
 // Prevent duplicate submissions
 let hasSubmitted = false;
 
@@ -5,7 +7,7 @@ console.log('LeetCode Notion Sync: Content script loaded.');
 
 const observer = new MutationObserver((mutations) => {
   // Strategy 1: Look for the specific class for submission result
-  const successElement = document.querySelector('.submission-result-accepted');
+  const successElement = document.querySelector(settings.selectorElement);
 
   // Strategy 2: Fallback to checking text content (more brittle but useful as backup)
   // Note: Be careful not to match "Accepted" in other contexts (like discussion)
@@ -41,7 +43,7 @@ const observer = new MutationObserver((mutations) => {
     hasSubmitted = true;
 
     // Send to Node.js Server
-    fetch('http://localhost:3000/update-progress', {
+    fetch(`${settings.serverUrl}/update-progress`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
