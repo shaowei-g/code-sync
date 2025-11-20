@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "LeetCode to Notion Sync",
+  "version": "1.0",
+  "description": "Syncs Accepted LeetCode submissions to Notion",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["https://leetcode.com/*", "https://neetcode.io/*", "http://localhost:{{PORT}}/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://leetcode.com/problems/*", "https://neetcode.io/*"],
+      "js": ["dist/content.js"]
+    }
+  ]
+}
