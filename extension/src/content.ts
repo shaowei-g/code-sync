@@ -24,19 +24,26 @@ const observer = new MutationObserver((mutations) => {
 
     console.log('LeetCode Notion Sync: Accepted status detected!');
 
-    // Extract Title
-    // Strategy 1: New UI title selector
-    const titleElement = document.querySelector('div[data-cy="question-title"]');
+    // Extract Title from URL (more reliable)
+    // URL format: https://neetcode.io/problems/linked-list-cycle-detection/question
+    // or https://leetcode.com/problems/two-sum/
+    const urlMatch = window.location.pathname.match(/\/problems\/([^/]+)/);
+    let cleanTitle = '';
 
-    // Strategy 2: Fallback to document title
-    let rawTitle = titleElement ? (titleElement as HTMLElement).innerText : document.title;
-
-    // Clean up title: "1. Two Sum" -> "Two Sum"
-    // Remove leading numbers and dots
-    let cleanTitle = rawTitle.replace(/^\d+\.\s*/, '').trim();
-
-    // If document.title was used, it might look like "Two Sum - LeetCode", so remove suffix
-    cleanTitle = cleanTitle.replace(' - LeetCode', '').replace(' - NeetCode', '').trim();
+    if (urlMatch && urlMatch[1]) {
+      cleanTitle = urlMatch[1].replace(/-/g, ' ');
+      // Optional: Title Case (e.g. "two sum" -> "Two Sum")
+      // cleanTitle = cleanTitle.replace(/\b\w/g, l => l.toUpperCase());
+    } else {
+      // Fallback to DOM scraping
+      const titleElement = document.querySelector('div[data-cy="question-title"]');
+      let rawTitle = titleElement ? (titleElement as HTMLElement).innerText : document.title;
+      cleanTitle = rawTitle
+        .replace(/^\d+\.\s*/, '')
+        .replace(' - LeetCode', '')
+        .replace(' - NeetCode', '')
+        .trim();
+    }
 
     console.log(`LeetCode Notion Sync: Detected Problem - ${cleanTitle}`);
 
