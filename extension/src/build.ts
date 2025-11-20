@@ -1,6 +1,12 @@
+import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import { settings } from './setting';
+
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
+const settings = {
+  serverUrl: process.env.SERVER_URL || 'http://localhost:3099',
+};
 
 console.log(`Building extension with PORT=${settings.serverUrl}`);
 

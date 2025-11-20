@@ -1,9 +1,17 @@
-import { settings } from './setting';
+import dotenv from 'dotenv';
+import path from 'path';
 
-// Prevent duplicate submissions
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+
+// Prevent  duplicate submissions
 let hasSubmitted = false;
 
 console.log('LeetCode Notion Sync: Content script loaded.');
+
+const settings = {
+  serverUrl: process.env.SERVER_URL || 'http://localhost:3099',
+  selectorElement: process.env.SELECTOR_ELEMENT || '.submission-result-accepted',
+};
 
 const observer = new MutationObserver((mutations) => {
   // Strategy 1: Look for the specific class for submission result
