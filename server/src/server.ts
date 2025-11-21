@@ -131,15 +131,44 @@ app.post('/update-progress', async (req: Request, res: Response) => {
 
     const pageId = page.id;
 
-    // 3. Calculate Next Review Date (Fixed 2 days later as per plan)
+    // 3. Get existing completion dates
+    let completionDates: string[] = [];
+    const properties = (page as any).properties;
+
+    if (properties['Completion Dates'] && properties['Completion Dates'].rich_text) {
+      const richTextArray = properties['Completion Dates'].rich_text;
+      if (richTextArray.length > 0) {
+        const existingText = richTextArray[0].plain_text;
+        try {
+          completionDates = JSON.parse(existingText);
+          console.log(`[Completion Dates] Found ${completionDates.length} existing dates`);
+        } catch (e) {
+          console.log(`[Completion Dates] Failed to parse existing dates, starting fresh`);
+          completionDates = [];
+        }
+      }
+    }
+
+    // 4. Add current date to completion dates
     const today = new Date();
+    const todayIso = today.toISOString().split('T')[0];
+
+    // Only add if not already completed today
+    if (!completionDates.includes(todayIso)) {
+      completionDates.push(todayIso);
+      console.log(`[Completion Dates] Added ${todayIso}, total: ${completionDates.length}`);
+    } else {
+      console.log(`[Completion Dates] Already completed today (${todayIso})`);
+    }
+
+    // 5. Calculate Next Review Date (2 days from today)
     const nextReviewDate = new Date();
     nextReviewDate.setDate(today.getDate() + 2);
     const nextReviewDateIso = nextReviewDate.toISOString().split('T')[0];
 
     console.log(`Updating page ${pageId}...`);
 
-    // 4. Update the Page
+    // 6. Update the Page
     await notion.pages.update({
       page_id: pageId,
       properties: {
@@ -151,6 +180,15 @@ app.post('/update-progress', async (req: Request, res: Response) => {
         },
         'Review Date': {
           date: { start: nextReviewDateIso },
+        },
+        'Completion Dates': {
+          rich_text: [
+            {
+              text: {
+                content: JSON.stringify(completionDates),
+              },
+            },
+          ],
         },
       },
     });
