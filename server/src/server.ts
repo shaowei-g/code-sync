@@ -2,13 +2,12 @@ import { Client } from '@notionhq/client';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
-
 import path from 'path';
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3099;
 
 // Middleware
 app.use(cors());
@@ -23,6 +22,72 @@ interface UpdateProgressRequest {
   problemUrl: string;
 }
 
+// Helper function to search Notion with fuzzy matching
+async function findPageInNotion(title: string) {
+  if (!DATABASE_ID) return null;
+
+  // Try exact match first
+  let response = await notion.databases.query({
+    database_id: DATABASE_ID,
+    filter: {
+      property: 'Name',
+      title: {
+        equals: title,
+      },
+    },
+  });
+
+  if (response.results.length > 0) {
+    console.log(`[Notion Search] Found exact match for: "${title}"`);
+    return response.results[0];
+  }
+
+  // Try contains match
+  response = await notion.databases.query({
+    database_id: DATABASE_ID,
+    filter: {
+      property: 'Name',
+      title: {
+        contains: title,
+      },
+    },
+  });
+
+  if (response.results.length > 0) {
+    console.log(`[Notion Search] Found contains match for: "${title}"`);
+    return response.results[0];
+  }
+
+  return null;
+}
+
+// Helper function to generate title variations
+function getTitleVariations(title: string): string[] {
+  const variations = [title];
+
+  // Remove "detection" suffix if present (e.g., "linked list cycle detection" -> "linked list cycle")
+  if (title.includes(' detection')) {
+    variations.push(title.replace(' detection', ''));
+  }
+
+  // Try with roman numerals (e.g., "two sum" -> "two sum ii")
+  const romanNumerals = [' ii', ' iii', ' iv'];
+  romanNumerals.forEach((numeral) => {
+    if (!title.includes(numeral)) {
+      variations.push(title + numeral);
+    }
+  });
+
+  // Try title case
+  const titleCase = title.replace(/\b\w/g, (l) => l.toUpperCase());
+  if (titleCase !== title) {
+    variations.push(titleCase);
+  }
+
+  console.log(`[Title Variations] Generated ${variations.length} variations:`, variations);
+  return variations;
+}
+
 app.post('/update-progress', async (req: Request, res: Response) => {
   const { problemTitle, problemUrl } = req.body as UpdateProgressRequest;
 
@@ -31,28 +96,42 @@ app.post('/update-progress', async (req: Request, res: Response) => {
   }
 
   console.log(`Received update request for: ${problemTitle}`);
+  console.log(`Problem URL: ${problemUrl}`);
 
   try {
-    // 1. Search for the problem in the Notion Database
-    const response = await notion.databases.query({
-      database_id: DATABASE_ID,
-      filter: {
-        property: 'Name',
-        title: {
-          contains: problemTitle,
-        },
-      },
-    });
+    // 1. Try to find the problem with the original title
+    let page = await findPageInNotion(problemTitle);
+    let finalTitle = problemTitle;
 
-    if (response.results.length === 0) {
-      console.log(`Problem not found in Notion: ${problemTitle}`);
-      return res.status(404).json({ message: 'Problem not found in Notion database.' });
+    // 2. If not found, try variations of the title
+    if (!page) {
+      console.log(`Title "${problemTitle}" not found in Notion. Trying variations...`);
+      const variations = getTitleVariations(problemTitle);
+
+      for (const variation of variations) {
+        if (variation === problemTitle) continue; // Skip original, already tried
+
+        console.log(`Trying variation: "${variation}"`);
+        page = await findPageInNotion(variation);
+
+        if (page) {
+          finalTitle = variation;
+          console.log(`Found in Notion using variation: ${finalTitle}`);
+          break;
+        }
+      }
     }
 
-    const page = response.results[0];
+    if (!page) {
+      console.log(`Problem still not found in Notion: ${problemTitle}`);
+      return res
+        .status(404)
+        .json({ message: `Problem "${problemTitle}" (and search result) not found in Notion database.` });
+    }
+
     const pageId = page.id;
 
-    // 2. Calculate Next Review Date (Fixed 2 days later as per plan)
+    // 3. Calculate Next Review Date (Fixed 2 days later as per plan)
     const today = new Date();
     const nextReviewDate = new Date();
     nextReviewDate.setDate(today.getDate() + 2);
@@ -60,12 +139,12 @@ app.post('/update-progress', async (req: Request, res: Response) => {
 
     console.log(`Updating page ${pageId}...`);
 
-    // 3. Update the Page
+    // 4. Update the Page
     await notion.pages.update({
       page_id: pageId,
       properties: {
         Status: {
-          select: { name: 'Completed' },
+          checkbox: true,
         },
         Reviewed: {
           checkbox: true,
@@ -76,7 +155,7 @@ app.post('/update-progress', async (req: Request, res: Response) => {
       },
     });
 
-    console.log(`Successfully updated: ${problemTitle}`);
+    console.log(`Successfully updated: ${finalTitle}`);
     res.json({
       success: true,
       message: 'Notion updated successfully',
