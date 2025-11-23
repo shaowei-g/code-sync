@@ -1,4 +1,4 @@
-{
+export const manifest = {
   "manifest_version": 3,
   "name": "LeetCode to Notion Sync",
   "version": "1.0",
