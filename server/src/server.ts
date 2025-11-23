@@ -1,7 +1,9 @@
 import { Client } from '@notionhq/client';
+import axios from 'axios';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
+import fs from 'fs';
 import path from 'path';
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -63,29 +65,132 @@ async function findPageInNotion(title: string) {
 
 // Helper function to generate title variations
 function getTitleVariations(title: string): string[] {
-  const variations = [title];
+  const variations = new Set<string>([title]);
 
-  // Remove "detection" suffix if present (e.g., "linked list cycle detection" -> "linked list cycle")
-  if (title.includes(' detection')) {
-    variations.push(title.replace(' detection', ''));
-  }
-
-  // Try with roman numerals (e.g., "two sum" -> "two sum ii")
-  const romanNumerals = [' ii', ' iii', ' iv'];
-  romanNumerals.forEach((numeral) => {
-    if (!title.includes(numeral)) {
-      variations.push(title + numeral);
+  // 1. Remove common suffixes
+  const suffixesToRemove = [' detection', ' problem', ' solution', ' question'];
+  suffixesToRemove.forEach((suffix) => {
+    if (title.includes(suffix)) {
+      variations.add(title.replace(suffix, ''));
     }
   });
 
-  // Try title case
-  const titleCase = title.replace(/\b\w/g, (l) => l.toUpperCase());
-  if (titleCase !== title) {
-    variations.push(titleCase);
+  // 2. Remove articles (a, an, the)
+  const withoutArticles = title.replace(/\b(a|an|the)\b\s*/gi, '');
+  if (withoutArticles !== title) {
+    variations.add(withoutArticles);
   }
 
-  console.log(`[Title Variations] Generated ${variations.length} variations:`, variations);
-  return variations;
+  // 3. Try with roman numerals (i, ii, iii, iv, v)
+  const romanNumerals = [' i', ' ii', ' iii', ' iv', ' v'];
+  romanNumerals.forEach((numeral) => {
+    if (!title.includes(numeral)) {
+      variations.add(title + numeral);
+    }
+  });
+
+  // 4. Try Title Case
+  const titleCase = title.replace(/\b\w/g, (l) => l.toUpperCase());
+  if (titleCase !== title) {
+    variations.add(titleCase);
+  }
+
+  // 5. Try lowercase
+  const lowercase = title.toLowerCase();
+  if (lowercase !== title) {
+    variations.add(lowercase);
+  }
+
+  // 6. Try removing numbers at the start (e.g., "226 invert binary tree" -> "invert binary tree")
+  const withoutLeadingNumbers = title.replace(/^\d+\.\s*/, '');
+  if (withoutLeadingNumbers !== title) {
+    variations.add(withoutLeadingNumbers);
+  }
+
+  // 7. Try singular/plural conversions for common words
+  if (title.endsWith('s') && title.length > 3) {
+    variations.add(title.slice(0, -1)); // Remove trailing 's'
+  } else if (!title.endsWith('s')) {
+    variations.add(title + 's'); // Add trailing 's'
+  }
+
+  // 8. Replace common word variations
+  const wordReplacements: Record<string, string[]> = {
+    a: ['an', 'the'],
+    an: ['a', 'the'],
+    the: ['a', 'an'],
+    tree: ['trees'],
+    trees: ['tree'],
+    list: ['lists'],
+    lists: ['list'],
+  };
+
+  Object.entries(wordReplacements).forEach(([from, toList]) => {
+    if (title.includes(` ${from} `)) {
+      toList.forEach((to) => {
+        variations.add(title.replace(` ${from} `, ` ${to} `));
+      });
+    }
+  });
+
+  const variationsArray = Array.from(variations);
+  console.log(`[Title Variations] Generated ${variationsArray.length} variations:`, variationsArray);
+  return variationsArray;
+}
+
+// Helper function to search Google for LeetCode problem title
+async function searchGoogleForLeetCode(problemTitle: string): Promise<string | null> {
+  try {
+    console.log(`[Google Search] Searching for: "${problemTitle} leetcode"`);
+    const query = `${problemTitle} leetcode`;
+    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=en`;
+
+    const { data } = await axios.get(url, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    });
+
+    console.log(`[Google Search] Received ${data.length} bytes of HTML`);
+
+    // Save HTML for debugging
+    const debugPath = path.join(__dirname, '../../google-search-debug.html');
+    fs.writeFileSync(debugPath, data);
+    console.log(`[Google Search] Saved debug HTML to: ${debugPath}`);
+
+    // Try multiple regex patterns to find LeetCode problem link
+    const patterns = [
+      /https?:\/\/leetcode\.com\/problems\/([a-z0-9-]+)/i,
+      /leetcode\.com\/problems\/([a-z0-9-]+)/i,
+      /\/problems\/([a-z0-9-]+)/i,
+    ];
+
+    for (const pattern of patterns) {
+      const matches = data.match(new RegExp(pattern, 'g'));
+      if (matches && matches.length > 0) {
+        console.log(`[Google Search] Found ${matches.length} matches with pattern: ${pattern}`);
+
+        // Extract slug from first match
+        const firstMatch = matches[0];
+        const slugMatch = firstMatch.match(/([a-z0-9-]+)$/i);
+
+        if (slugMatch) {
+          const slug = slugMatch[1];
+          // Convert slug to title (e.g., "invert-binary-tree" -> "invert binary tree")
+          const titleFromSlug = slug.replace(/-/g, ' ');
+          console.log(`[Google Search] Extracted slug: "${slug}" -> title: "${titleFromSlug}"`);
+          return titleFromSlug;
+        }
+      }
+    }
+
+    console.log(`[Google Search] No LeetCode problem found in search results`);
+    return null;
+  } catch (error) {
+    console.error('[Google Search] Error:', error);
+    return null;
+  }
 }
 
 app.post('/update-progress', async (req: Request, res: Response) => {
@@ -118,6 +223,22 @@ app.post('/update-progress', async (req: Request, res: Response) => {
           finalTitle = variation;
           console.log(`Found in Notion using variation: ${finalTitle}`);
           break;
+        }
+      }
+    }
+
+    // 3. If still not found, try Google search
+    if (!page) {
+      console.log(`Variations failed. Trying Google search...`);
+      const googleTitle = await searchGoogleForLeetCode(problemTitle);
+
+      if (googleTitle) {
+        console.log(`Trying Google result: "${googleTitle}"`);
+        page = await findPageInNotion(googleTitle);
+
+        if (page) {
+          finalTitle = googleTitle;
+          console.log(`Found in Notion using Google search result: ${finalTitle}`);
         }
       }
     }
