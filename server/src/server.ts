@@ -3,7 +3,6 @@ import axios from 'axios';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
-import fs from 'fs';
 import path from 'path';
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
@@ -138,57 +137,89 @@ function getTitleVariations(title: string): string[] {
   return variationsArray;
 }
 
-// Helper function to search Google for LeetCode problem title
+// Helper function to search Google for LeetCode problem title via Custom Search API
 async function searchGoogleForLeetCode(problemTitle: string): Promise<string | null> {
-  try {
-    console.log(`[Google Search] Searching for: "${problemTitle} leetcode"`);
-    const query = `${problemTitle} leetcode`;
-    const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&hl=en`;
+  const apiKey = process.env.GOOGLE_API_KEY;
+  const cx = process.env.GOOGLE_CX;
 
+  if (!apiKey || !cx) {
+    console.warn('[Google Search] GOOGLE_API_KEY or GOOGLE_CX not configured; skipping Google search');
+    return null;
+  }
+
+  try {
+    const query = `${problemTitle} leetcode`;
+    console.log(`[Google Search] (API) Searching for: "${query}"`);
+
+    const url = 'https://www.googleapis.com/customsearch/v1';
     const { data } = await axios.get(url, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      params: {
+        key: apiKey,
+        cx,
+        q: query,
       },
     });
 
-    console.log(`[Google Search] Received ${data.length} bytes of HTML`);
-
-    // Save HTML for debugging
-    const debugPath = path.join(__dirname, '../../google-search-debug.html');
-    fs.writeFileSync(debugPath, data);
-    console.log(`[Google Search] Saved debug HTML to: ${debugPath}`);
-
-    // Try multiple regex patterns to find LeetCode problem link
-    const patterns = [
-      /https?:\/\/leetcode\.com\/problems\/([a-z0-9-]+)/i,
-      /leetcode\.com\/problems\/([a-z0-9-]+)/i,
-      /\/problems\/([a-z0-9-]+)/i,
-    ];
-
-    for (const pattern of patterns) {
-      const matches = data.match(new RegExp(pattern, 'g'));
-      if (matches && matches.length > 0) {
-        console.log(`[Google Search] Found ${matches.length} matches with pattern: ${pattern}`);
-
-        // Extract slug from first match
-        const firstMatch = matches[0];
-        const slugMatch = firstMatch.match(/([a-z0-9-]+)$/i);
-
-        if (slugMatch) {
-          const slug = slugMatch[1];
-          // Convert slug to title (e.g., "invert-binary-tree" -> "invert binary tree")
-          const titleFromSlug = slug.replace(/-/g, ' ');
-          console.log(`[Google Search] Extracted slug: "${slug}" -> title: "${titleFromSlug}"`);
-          return titleFromSlug;
-        }
-      }
+    if (!data.items || !Array.isArray(data.items) || data.items.length === 0) {
+      console.log('[Google Search] (API) No items in search result');
+      return null;
     }
 
-    console.log(`[Google Search] No LeetCode problem found in search results`);
+    // 僅取 leetcode.com/problems/... 的結果
+    const candidates = (data.items as any[]).filter(
+      (item) => typeof item.link === 'string' && item.link.includes('leetcode.com/problems/'),
+    );
+
+    if (candidates.length === 0) {
+      console.log('[Google Search] (API) No LeetCode problem links found in items');
+      return null;
+    }
+
+    const normalizedTitle = problemTitle.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+    const titleWords = normalizedTitle.split(/\s+/).filter((w) => w.length > 2 && w !== 'linked'); // 過濾太短/雜訊字
+
+    const pickBest = (items: any[]): string | null => {
+      for (const item of items) {
+        const link: string = item.link;
+        const m = link.match(/leetcode\.com\/problems\/([a-z0-9-]+)/i);
+        if (!m) continue;
+
+        const slug = m[1];
+        const fromSlug = slug.replace(/-/g, ' ').toLowerCase();
+
+        const hasAllWords = titleWords.every((w) => fromSlug.includes(w));
+        if (hasAllWords) {
+          console.log(
+            `[Google Search] (API) Picked slug "${slug}" for title "${problemTitle}" (matched words: ${titleWords.join(
+              ', ',
+            )})`,
+          );
+          return fromSlug;
+        }
+      }
+      return null;
+    };
+
+    const preferred = pickBest(candidates);
+    if (preferred) {
+      return preferred;
+    }
+
+    // fallback：第一個符合的 leetcode 結果
+    const first = candidates[0];
+    const link: string = first.link;
+    const m = link.match(/leetcode\.com\/problems\/([a-z0-9-]+)/i);
+    if (m) {
+      const slug = m[1];
+      const fromSlug = slug.replace(/-/g, ' ');
+      console.log(`[Google Search] (API) Fallback slug "${slug}" -> title "${fromSlug}"`);
+      return fromSlug;
+    }
+
+    console.log('[Google Search] (API) No suitable LeetCode problem found after filtering');
     return null;
   } catch (error) {
-    console.error('[Google Search] Error:', error);
+    console.error('[Google Search] (API) Error:', error);
     return null;
   }
 }
@@ -208,24 +239,24 @@ app.post('/update-progress', async (req: Request, res: Response) => {
     let page = await findPageInNotion(problemTitle);
     let finalTitle = problemTitle;
 
-    // 2. If not found, try variations of the title
-    if (!page) {
-      console.log(`Title "${problemTitle}" not found in Notion. Trying variations...`);
-      const variations = getTitleVariations(problemTitle);
+    // // 2. If not found, try variations of the title
+    // if (!page) {
+    //   console.log(`Title "${problemTitle}" not found in Notion. Trying variations...`);
+    //   const variations = getTitleVariations(problemTitle);
 
-      for (const variation of variations) {
-        if (variation === problemTitle) continue; // Skip original, already tried
+    //   for (const variation of variations) {
+    //     if (variation === problemTitle) continue; // Skip original, already tried
 
-        console.log(`Trying variation: "${variation}"`);
-        page = await findPageInNotion(variation);
+    //     console.log(`Trying variation: "${variation}"`);
+    //     page = await findPageInNotion(variation);
 
-        if (page) {
-          finalTitle = variation;
-          console.log(`Found in Notion using variation: ${finalTitle}`);
-          break;
-        }
-      }
-    }
+    //     if (page) {
+    //       finalTitle = variation;
+    //       console.log(`Found in Notion using variation: ${finalTitle}`);
+    //       break;
+    //     }
+    //   }
+    // }
 
     // 3. If still not found, try Google search
     if (!page) {

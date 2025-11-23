@@ -85,6 +85,8 @@ NOTION_KEY=your_notion_integration_token
 NOTION_DATABASE_ID=your_database_id
 SERVER_URL=http://localhost:3099
 SELECTOR_ELEMENT=.submission-result-accepted
+GOOGLE_API_KEY=your_google_custom_search_api_key
+GOOGLE_CX=your_google_custom_search_engine_id
 ```
 
 ### 3. 安裝依賴並建置
