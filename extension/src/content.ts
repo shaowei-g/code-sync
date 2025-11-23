@@ -1,4 +1,5 @@
 import { settings } from './settings';
+import { showToast } from './show-toast';
 
 // Prevent duplicate submissions
 let hasSubmitted = false;
@@ -62,7 +63,12 @@ const observer = new MutationObserver((mutations) => {
       .then((data) => {
         console.log('LeetCode Notion Sync: Server response', data);
         if (data.success) {
-          alert(`Notion Updated! Next review: ${data.nextReview}`);
+          const msg = `Notion Updated! Next review: ${data.nextReview}`;
+          if (settings.notifyMethod === 'toast') {
+            showToast(msg, settings.toastTimeoutMs, settings.toastPosition);
+          } else {
+            alert(msg);
+          }
         } else {
           console.warn('LeetCode Notion Sync: Update failed', data);
         }
